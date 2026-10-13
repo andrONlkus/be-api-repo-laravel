@@ -1,0 +1,360 @@
+{
+  "info": {
+    "name": "API REPO (Repository Ijazah & Transkrip)",
+    "description": "Collection untuk REST API repository dokumen (CodeIgniter 3).\n\nJalankan server lokal dari root project:\n  php -S localhost:8080\n\nLalu pilih environment \"API REPO - Local\".\n\nPERINGATAN: database di config/database.php berisi data asli. Request di folder \"2. Menulis Data\" akan mengubah database (insert/update dokumen & doc_log). Jangan memakai NIM mahasiswa sungguhan untuk upload.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Read Only (aman)",
+      "item": [
+        {
+          "name": "Test API",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Response JSON valid', () => pm.response.to.be.json);",
+                  "pm.test('status = S', () => pm.expect(pm.response.json().status).to.eql('S'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url_repo}}/api",
+              "host": ["{{base_url_repo}}"],
+              "path": ["api"]
+            },
+            "description": "Health-check. Handler: Api::index_get()"
+          }
+        },
+        {
+          "name": "Get Document by NIM",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "let res;",
+                  "pm.test('Response JSON valid', () => { res = pm.response.json(); });",
+                  "if (!res) return;",
+                  "",
+                  "if (res.status === 'S') {",
+                  "  pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+                  "  // ListOfFiles berupa string: \"URL|realname;URL|realname;\"",
+                  "  const files = (res.data.ListOfFiles || '').split(';').filter(Boolean).map(f => {",
+                  "    const [url, realname] = f.split('|');",
+                  "    // base_url di config.php dipaksa https://, untuk lokal (base_url_repo http://) ganti ke http://",
+                  "    const isHttp = String(pm.variables.get('base_url_repo')).startsWith('http://');",
+                  "    return { url: isHttp ? url.replace(/^https:\\/\\//, 'http://') : url, realname };",
+                  "  });",
+                  "  pm.test('Ada file', () => pm.expect(files.length).to.be.above(0));",
+                  "  console.log('Daftar file:', files);",
+                  "  if (files.length) {",
+                  "    pm.environment.set('download_url', files[0].url);",
+                  "    const m = files[0].url.match(/download_file\\/([^/]+)\\/(\\d+)/);",
+                  "    if (m) { pm.environment.set('filename', m[1]); pm.environment.set('id_doc', m[2]); }",
+                  "  }",
+                  "  pm.visualizer.set(`<table border=1 cellpadding=6><tr><th>#</th><th>Nama Asli</th><th>URL Download</th></tr>{{#each files}}<tr><td>{{@index}}</td><td>{{realname}}</td><td>{{url}}</td></tr>{{/each}}</table>`, { files });",
+                  "} else {",
+                  "  pm.test('Pesan error: ' + res.Message, () => pm.expect(res.status).to.eql('E'));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url_repo}}/api/document?nim={{nim}}",
+              "host": ["{{base_url_repo}}"],
+              "path": ["api", "document"],
+              "query": [{ "key": "nim", "value": "{{nim}}", "description": "NIM mahasiswa" }]
+            },
+            "description": "Cari dokumen Ijazah/Transkrip aktif terbaru berdasarkan NIM. Handler: Api::document_get().\n\nSukses: status S, data.ListOfFiles berisi string \"URL|realname;...\". Tab Visualize menampilkan daftar file dalam bentuk tabel.\nGagal: HTTP 404, Message \"Record is empty\".\n\nScript test otomatis mengisi variabel download_url, filename, id_doc untuk request Download File."
+          }
+        },
+        {
+          "name": "Get Document by NIM (format XML)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url_repo}}/api/document/nim/{{nim}}/format/xml",
+              "host": ["{{base_url_repo}}"],
+              "path": ["api", "document", "nim", "{{nim}}", "format", "xml"]
+            },
+            "description": "Contoh pemakaian parameter lewat segmen URI dan format output XML (fitur REST_Controller)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Menulis Data (hati-hati)",
+      "item": [
+        {
+          "name": "Download File",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url_repo}}/api/download_file/{{filename}}/{{id_doc}}",
+              "host": ["{{base_url_repo}}"],
+              "path": ["api", "download_file", "{{filename}}", "{{id_doc}}"]
+            },
+            "description": "Unduh file. Handler: Api::download_file_get().\n\nJalankan \"Get Document by NIM\" dulu agar variabel filename & id_doc terisi. Gunakan \"Send and Download\".\n\n- Menambah 1 baris log \"Download via API\" ke tabel doc_log setiap dipanggil.\n- Secara lokal hasilnya \"file not found\" karena file dicari di /mnt/ossfs/arsip/ (mount Alibaba OSS di server)."
+          }
+        },
+        {
+          "name": "Upload Document",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Pengaman: cegah upload dengan NIM yang sama dengan variabel nim (NIM untuk tes baca),",
+                  "// karena upload dengan NIM yang sudah ada akan MENGHAPUS & MENGGANTI file mahasiswa tersebut.",
+                  "// pm.variables membaca semua scope (environment, collection, global).",
+                  "let up = pm.variables.get('upload_nim');",
+                  "if (!up) {",
+                  "  // Belum ada di environment mana pun: pakai NIM dummy default untuk request ini.",
+                  "  up = 'TEST0000001';",
+                  "  pm.variables.set('upload_nim', up);",
+                  "  console.log('upload_nim belum diset, memakai default ' + up);",
+                  "}",
+                  "if (!String(up).startsWith('TEST')) {",
+                  "  throw new Error('upload_nim = ' + up + '. Gunakan awalan TEST (mis. TEST0000001) agar tidak menimpa data mahasiswa asli.');",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.text();",
+                  "if (body.includes('wrong_format')) {",
+                  "  pm.test('Upload file gagal (wrong_format): cek upload_path & ukuran file', () => pm.expect.fail(body));",
+                  "} else {",
+                  "  const res = pm.response.json();",
+                  "  pm.test('status = S', () => pm.expect(res.status).to.eql('S'));",
+                  "  if (res.data) pm.environment.set('last_id_doc', res.data.id_doc);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "nim", "value": "{{upload_nim}}", "type": "text", "description": "NIM. Jika sudah ada, file lama dihapus & diganti." },
+                { "key": "school", "value": "SBE", "type": "text", "description": "SBE (kategori 1075) atau STEM (kategori 1076)" },
+                { "key": "doc_date", "value": "2026-10", "type": "text", "description": "Periode dokumen -> kolom yearDate & bagian nama file" },
+                { "key": "expired_date", "value": "2030-12-31", "type": "text", "description": "-> kolom active_until" },
+                { "key": "exp_public", "value": "2030-12-31", "type": "text", "description": "Opsional -> kolom expired_public" },
+                { "key": "userfile[]", "type": "file", "src": [], "description": "Pilih file (boleh lebih dari satu: tambah baris dengan key userfile[] yang sama)" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url_repo}}/api/document",
+              "host": ["{{base_url_repo}}"],
+              "path": ["api", "document"]
+            },
+            "description": "Upload Ijazah/Transkrip. Handler: Api::document_post().\n\nSebelum dipakai:\n1. Pilih file pada field userfile[] (tab Body).\n2. Isi variabel environment upload_nim dengan NIM dummy berawalan TEST.\n3. Secara lokal upload akan gagal (\"wrong_format\") karena upload_path = /mnt/ossfs/arsip/ tidak ada di laptop. Untuk tes lokal, ubah sementara ke ./assets/arsip/ di Api.php (baris 184 & 392).\n\nPERINGATAN: request ini INSERT/UPDATE ke database yang terhubung (saat ini db_dms berisi data asli)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. API Arsip Umum (wajib API key)",
+      "description": "Endpoint baru untuk semua jenis arsip (controllers/Archive.php & Master.php). Rancangan: analisa/06-rancangan-api-arsip.md.\n\nSemua request mengirim header X-API-KEY = {{api_key}}. Key didaftarkan di $config['api_keys'] (config.php).\n\nUrutan tes: Master -> Create -> Detail/Cari -> Update -> Download. Script test Create mengisi archive_id & archive_filename otomatis.",
+      "item": [
+        {
+          "name": "Master - Categories",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-API-KEY", "value": "{{api_key}}" }],
+            "url": {
+              "raw": "{{base_url_repo}}/api/master/categories?level=3&q=SPM",
+              "host": ["{{base_url_repo}}"],
+              "path": ["api", "master", "categories"],
+              "query": [
+                { "key": "level", "value": "3", "description": "1-4 (opsional)" },
+                { "key": "parent", "value": "", "description": "id_parent (opsional)", "disabled": true },
+                { "key": "q", "value": "SPM", "description": "cari nama / code_full (opsional)" }
+              ]
+            },
+            "description": "Daftar kategori aktif. can_upload = true untuk level 2-4."
+          }
+        },
+        {
+          "name": "Master - Departements",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-API-KEY", "value": "{{api_key}}" }],
+            "url": {
+              "raw": "{{base_url_repo}}/api/master/departements",
+              "host": ["{{base_url_repo}}"],
+              "path": ["api", "master", "departements"]
+            },
+            "description": "Daftar departemen aktif beserta upload_limit (MB)."
+          }
+        },
+        {
+          "name": "Master - Tipefiles",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-API-KEY", "value": "{{api_key}}" }],
+            "url": {
+              "raw": "{{base_url_repo}}/api/master/tipefiles",
+              "host": ["{{base_url_repo}}"],
+              "path": ["api", "master", "tipefiles"]
+            }
+          }
+        },
+        {
+          "name": "Archive - Create",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const res = pm.response.json();",
+                  "pm.test('HTTP 201', () => pm.response.to.have.status(201));",
+                  "if (res.status === 'S') {",
+                  "  pm.environment.set('archive_id', res.data.id_doc);",
+                  "  pm.environment.set('archive_filename', res.data.files[0].filename);",
+                  "  console.log('archive_id =', res.data.id_doc, 'kode_arsip =', res.data.kode_arsip);",
+                  "} else {",
+                  "  console.log('Gagal:', res.Message, res.errors);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-API-KEY", "value": "{{api_key}}" }],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "id_category", "value": "1998", "type": "text", "description": "Wajib. Kategori level 2-4 (lihat Master - Categories). 1998 = SPM.003.013 Laporan" },
+                { "key": "departement_owner", "value": "30", "type": "text", "description": "Wajib. ID departemen aktif" },
+                { "key": "tipefile", "value": "8", "type": "text", "description": "Wajib. ID tipe file aktif" },
+                { "key": "doc_date", "value": "2026-10", "type": "text", "description": "Wajib. YYYY-MM" },
+                { "key": "keyword", "value": "TESTAPIARSIP,uji", "type": "text", "description": "Wajib. Dipisah koma" },
+                { "key": "summary", "value": "Uji API arsip umum", "type": "text", "description": "Wajib" },
+                { "key": "userfile[]", "type": "file", "src": [], "description": "Wajib, minimal 1 file. Ekstensi sesuai arsip_allowed_types" },
+                { "key": "active_until", "value": "", "type": "text", "description": "Opsional YYYY-MM-DD. Default: hari ini + doc_life kategori", "disabled": true },
+                { "key": "public", "value": "0", "type": "text", "description": "Opsional 0/1, default 0", "disabled": true },
+                { "key": "expired_public", "value": "", "type": "text", "description": "Opsional YYYY-MM-DD", "disabled": true },
+                { "key": "link", "value": "", "type": "text", "description": "Opsional, maks 155 karakter", "disabled": true },
+                { "key": "created_by", "value": "819", "type": "text", "description": "Opsional idusers aktif, default 819", "disabled": true },
+                { "key": "validate_access", "value": "1", "type": "text", "description": "Opsional. 1 = cek category_acc (access 3) termasuk kategori induk" }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url_repo}}/api/archive",
+              "host": ["{{base_url_repo}}"],
+              "path": ["api", "archive"]
+            },
+            "description": "Buat arsip baru + upload file. Sukses: HTTP 201. Validasi gagal: HTTP 422 dengan errors per field. Tanpa akses (validate_access=1): HTTP 403.\n\nPERINGATAN: menulis ke database yang terhubung. Pakai keyword TESTAPIARSIP agar data uji mudah dicari."
+          }
+        },
+        {
+          "name": "Archive - Detail",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-API-KEY", "value": "{{api_key}}" }],
+            "url": {
+              "raw": "{{base_url_repo}}/api/archive/{{archive_id}}",
+              "host": ["{{base_url_repo}}"],
+              "path": ["api", "archive", "{{archive_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Archive - Search",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-API-KEY", "value": "{{api_key}}" }],
+            "url": {
+              "raw": "{{base_url_repo}}/api/archive?q=TESTAPIARSIP&page=1&limit=20",
+              "host": ["{{base_url_repo}}"],
+              "path": ["api", "archive"],
+              "query": [
+                { "key": "q", "value": "TESTAPIARSIP", "description": "cari di keyword, summary, kode_arsip" },
+                { "key": "id_category", "value": "1719", "description": "filter kategori", "disabled": true },
+                { "key": "include_sub", "value": "1", "description": "1 = termasuk sub-kategori", "disabled": true },
+                { "key": "departement_owner", "value": "", "disabled": true },
+                { "key": "tipefile", "value": "", "disabled": true },
+                { "key": "year", "value": "2026", "description": "YYYY", "disabled": true },
+                { "key": "doc_date", "value": "2026-10", "description": "YYYY-MM", "disabled": true },
+                { "key": "created_from", "value": "2026-10-01", "disabled": true },
+                { "key": "created_to", "value": "2026-10-31", "disabled": true },
+                { "key": "public", "value": "1", "disabled": true },
+                { "key": "sort", "value": "created_date", "description": "created_date | kode_arsip | doc_date | id_doc", "disabled": true },
+                { "key": "order", "value": "desc", "description": "asc | desc", "disabled": true },
+                { "key": "page", "value": "1" },
+                { "key": "limit", "value": "20", "description": "maks 100" }
+              ]
+            },
+            "description": "Pencarian dokumen aktif. Respons: data.items[] + data.pagination."
+          }
+        },
+        {
+          "name": "Archive - Update (metadata / file)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "X-API-KEY", "value": "{{api_key}}" }],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "summary", "value": "Uji API arsip umum (diubah)", "type": "text", "description": "Semua field Create bersifat opsional di sini" },
+                { "key": "public", "value": "1", "type": "text", "disabled": true },
+                { "key": "userfile[]", "type": "file", "src": [], "description": "Opsional: file baru", "disabled": true },
+                { "key": "file_mode", "value": "append", "type": "text", "description": "append (default) | replace = semua file lama diganti file baru", "disabled": true },
+                { "key": "delete_files[]", "value": "{{archive_filename}}", "type": "text", "description": "Opsional: nama file milik arsip ini yang dihapus", "disabled": true },
+                { "key": "edited_by", "value": "819", "type": "text", "description": "Opsional idusers aktif, default 819", "disabled": true },
+                { "key": "validate_access", "value": "1", "type": "text", "disabled": true }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url_repo}}/api/archive/{{archive_id}}",
+              "host": ["{{base_url_repo}}"],
+              "path": ["api", "archive", "{{archive_id}}"]
+            },
+            "description": "Ubah data dan/atau file. kode_arsip tidak berubah. Respons berisi detail arsip terbaru."
+          }
+        },
+        {
+          "name": "Archive - Download File",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "X-API-KEY", "value": "{{api_key}}" }],
+            "url": {
+              "raw": "{{base_url_repo}}/api/archive/{{archive_id}}/file/{{archive_filename}}",
+              "host": ["{{base_url_repo}}"],
+              "path": ["api", "archive", "{{archive_id}}", "file", "{{archive_filename}}"]
+            },
+            "description": "Gunakan \"Send and Download\". Untuk link langsung tanpa header, tambahkan ?api_key=... di URL."
+          }
+        }
+      ]
+    }
+  ]
+}
