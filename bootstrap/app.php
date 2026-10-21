@@ -21,7 +21,7 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
         // Endpoint lama membedakan ?nim= (kosong) dan tanpa nim, seperti CodeIgniter
         $middleware->convertEmptyStringsToNull(except: [
-            fn (Request $request) => $request->is('api/document', 'api/document/*'),
+            fn (Request $request) => $request->is('api/document', 'api/document.json', 'api/document/*'),
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

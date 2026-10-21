@@ -51,7 +51,10 @@ class ArchiveService
             $term = '%'.addcslashes($f['q'], '\\%_').'%';
             $query->where(fn ($w) => $w->where('d.keyword', 'like', $term)
                 ->orWhere('d.summary', 'like', $term)
-                ->orWhere('d.kode_arsip', 'like', $term));
+                ->orWhere('d.kode_arsip', 'like', $term)
+                // Tambahan dibanding CodeIgniter: q juga mencari nama asli file (files.realname)
+                ->orWhereExists(fn ($e) => $e->from('files as f')->whereColumn('f.id_doc', 'd.id_doc')
+                    ->where('f.realname', 'like', $term)));
         }
         if (! empty($f['id_category'])) {
             if (! empty($f['include_sub'])) {

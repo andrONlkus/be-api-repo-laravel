@@ -4,6 +4,7 @@ namespace App\Http\Requests\Archive;
 
 use Illuminate\Http\UploadedFile;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\File\UploadedFile as SymfonyUploadedFile;
 
 /**
  * Aturan validasi bersama untuk create & update arsip.
@@ -12,14 +13,17 @@ trait ArchiveRules
 {
     protected function metadataRules(string $presence): array
     {
+        // Update: field yang dikirim kosong boleh null lalu diabaikan (tidak mengubah kolom)
+        $p = $presence === 'required' ? ['required'] : [$presence, 'nullable'];
+
         return [
-            'id_category' => [$presence, 'integer', Rule::exists('dms.categories', 'id_category')
+            'id_category' => [...$p, 'integer', Rule::exists('dms.categories', 'id_category')
                 ->where('status_category', 'active')->whereIn('level', [2, 3, 4])],
-            'departement_owner' => [$presence, 'integer', Rule::exists('dms.departement', 'id_departement')->where('status_departement', 'active')],
-            'tipefile' => [$presence, 'integer', Rule::exists('dms.tipefile', 'id_tipefile')->where('status_tipefile', 'active')],
-            'doc_date' => [$presence, 'date_format:Y-m'],
-            'keyword' => [$presence, 'string'],
-            'summary' => [$presence, 'string'],
+            'departement_owner' => [...$p, 'integer', Rule::exists('dms.departement', 'id_departement')->where('status_departement', 'active')],
+            'tipefile' => [...$p, 'integer', Rule::exists('dms.tipefile', 'id_tipefile')->where('status_tipefile', 'active')],
+            'doc_date' => [...$p, 'date_format:Y-m'],
+            'keyword' => [...$p, 'string'],
+            'summary' => [...$p, 'string'],
             'active_until' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
             'public' => ['sometimes', 'nullable', 'in:0,1'],
             'expired_public' => ['sometimes', 'nullable', 'date_format:Y-m-d'],
@@ -62,6 +66,16 @@ trait ArchiveRules
             'userfile.*.mimes' => 'Isi file tidak sesuai ekstensinya (boleh: :values).',
             'userfile.*.file' => 'Upload file gagal.',
         ];
+    }
+
+    // Field userfile tunggal (tanpa []) diperlakukan sama dengan userfile[]
+    protected function normalizeUserfile(): void
+    {
+        $file = $this->files->get('userfile');
+        if ($file instanceof SymfonyUploadedFile) {
+            $this->files->set('userfile', [$file]);
+            $this->convertedFiles = null;
+        }
     }
 
     public function validateAccess(): bool

@@ -33,7 +33,8 @@ class MasterDataService
             $query->where('id_parent', $parent);
         }
         if ($q !== null && $q !== '') {
-            $query->where(fn ($w) => $w->where('name_category', 'like', '%'.$q.'%')->orWhere('code_full', 'like', '%'.$q.'%'));
+            $term = '%'.addcslashes($q, '\\%_').'%';
+            $query->where(fn ($w) => $w->where('name_category', 'like', $term)->orWhere('code_full', 'like', $term));
         }
 
         return $query->orderBy('code_full')->get()->map(fn ($r) => [

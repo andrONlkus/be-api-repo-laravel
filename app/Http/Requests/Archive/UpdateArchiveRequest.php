@@ -13,7 +13,18 @@ class UpdateArchiveRequest extends FormRequest
         return true;
     }
 
-    // Semua field opsional; hanya field yang dikirim yang diubah
+    // delete_files boleh string tunggal; nilai kosong dibuang
+    protected function prepareForValidation(): void
+    {
+        $this->normalizeUserfile();
+
+        if ($this->has('delete_files')) {
+            $names = array_map(fn ($v) => trim((string) $v), (array) $this->input('delete_files'));
+            $this->merge(['delete_files' => array_values(array_filter($names, 'strlen'))]);
+        }
+    }
+
+    // Semua field opsional; hanya field yang dikirim (dan tidak kosong) yang diubah
     public function rules(): array
     {
         return $this->metadataRules('sometimes') + $this->fileRules('sometimes') + [

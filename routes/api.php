@@ -14,6 +14,16 @@ Route::get('document/nim/{nim}', [LegacyApiController::class, 'document'])->name
 Route::post('document', [LegacyApiController::class, 'upload'])->name('legacy.document.upload');
 Route::get('download_file/{filename}/{idDoc?}', [LegacyApiController::class, 'downloadFile'])->name('legacy.download');
 
+// Variasi URL REST_Controller: /api/index, akhiran .json dan /format/json (XML tidak didukung)
+foreach (['index', 'index.json', 'index/format/json', 'format/json'] as $uri) {
+    Route::get($uri, [LegacyApiController::class, 'index']);
+}
+foreach (['document.json', 'document/format/json'] as $uri) {
+    Route::get($uri, [LegacyApiController::class, 'document']);
+    Route::post($uri, [LegacyApiController::class, 'upload']);
+}
+Route::get('document/nim/{nim}/format/json', [LegacyApiController::class, 'document']);
+
 /*
 | API arsip umum: wajib X-API-KEY atau token Sanctum (Authorization: Bearer)
 */

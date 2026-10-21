@@ -97,6 +97,38 @@ class LegacyApiTest extends TestCase
         $this->assertSame('Update via API', $this->dms()->table('doc_log')->orderByDesc('id_log')->value('activity'));
     }
 
+    public function test_reupload_existing_nim_without_school(): void
+    {
+        $first = $this->upload('TEST0000004', 'STEM')->json('data');
+
+        // CodeIgniter tidak membaca school saat update, kategori tetap
+        $this->upload('TEST0000004', '')->assertOk()->assertJsonPath('data.KodeArsip', $first['KodeArsip']);
+        $this->assertSame('1076', $this->dms()->table('document')->where('id_doc', $first['id_doc'])->value('id_category'));
+
+        $this->upload('TEST0000005', '')->assertStatus(400)
+            ->assertExactJson(['status' => 'E', 'code' => '400', 'Message' => 'school must be SBE or STEM']);
+    }
+
+    public function test_rest_controller_url_variants(): void
+    {
+        $this->upload('TEST0000006');
+        $health = ['status' => 'S', 'code' => '200', 'message' => 'Test API Success!'];
+
+        foreach (['/api/index', '/api/index.json', '/api/index/format/json', '/api/format/json'] as $url) {
+            $this->get($url)->assertOk()->assertExactJson($health);
+        }
+        foreach ([
+            '/api/document.json?nim=TEST0000006',
+            '/api/document/format/json?nim=TEST0000006',
+            '/api/document/nim/TEST0000006.json',
+            '/api/document/nim/TEST0000006/format/json',
+            '/api/document?nim=TEST0000006&format=json',
+        ] as $url) {
+            $this->get($url)->assertOk()->assertJsonPath('data.keyword', 'Ijazah,Transkrip,TEST0000006');
+        }
+        $this->get('/api/document.json?nim=')->assertNotFound()->assertJsonPath('Message', 'NIM is empty');
+    }
+
     public function test_upload_too_large_returns_wrong_format(): void
     {
         $this->dms()->table('departement')->where('id_departement', 12)->update(['upload_limit' => 1]);

@@ -170,6 +170,9 @@ class ArchiveApiTest extends TestCase
         $this->getJson('/api/archive?year=2026&departement_owner=30&public=0&limit=1', $this->headers())
             ->assertJsonPath('data.meta.total', 1)->assertJsonPath('data.meta.last_page', 1);
         $this->getJson('/api/archive?q=tidakada', $this->headers())->assertJsonPath('data.meta.total', 0);
+        // q juga mencari realname file
+        $this->getJson('/api/archive?q='.urlencode('Laporan Uji'), $this->headers())
+            ->assertJsonPath('data.meta.total', 1)->assertJsonPath('data.data.0.id_doc', $data['id_doc']);
         $this->getJson('/api/archive?limit=500&sort=x&doc_date=2026', $this->headers())
             ->assertUnprocessable()->assertJsonStructure(['errors' => ['limit', 'sort', 'doc_date']]);
     }
@@ -234,5 +237,52 @@ class ArchiveApiTest extends TestCase
             'file_mode' => 'replace',
             'userfile' => [UploadedFile::fake()->create('Baru.pdf', 5, 'application/pdf')],
         ], $this->headers())->assertOk()->assertJsonCount(1, 'data.files');
+    }
+
+    public function test_update_ignores_empty_fields(): void
+    {
+        $doc = $this->createArchive(['public' => '1', 'expired_public' => '2030-12-31', 'link' => 'https://contoh.id']);
+
+        // Frontend mengirim seluruh form: field kosong tidak boleh menimpa data dengan NULL
+        $this->post('/api/archive/'.$doc['id_doc'], [
+            'summary' => 'Diubah',
+            'keyword' => '', 'id_category' => '', 'tipefile' => '', 'doc_date' => '',
+            'public' => '', 'expired_public' => '', 'active_until' => '', 'link' => '',
+        ], $this->headers())
+            ->assertOk()
+            ->assertJsonPath('data.summary', 'Diubah')
+            ->assertJsonPath('data.keyword', 'TESTAPIARSIP,uji')
+            ->assertJsonPath('data.category.id_category', 3)
+            ->assertJsonPath('data.public', '1')
+            ->assertJsonPath('data.expired_public', '2030-12-31')
+            ->assertJsonPath('data.link', 'https://contoh.id');
+        $this->assertNotNull($this->dms()->table('document')->where('id_doc', $doc['id_doc'])->value('active_until'));
+    }
+
+    public function test_single_userfile_and_single_delete_files_are_accepted(): void
+    {
+        $doc = $this->createArchive(['userfile' => UploadedFile::fake()->create('Satu.pdf', 10, 'application/pdf')]);
+        $this->assertCount(1, $doc['files']);
+
+        $this->post('/api/archive/'.$doc['id_doc'], [
+            'userfile' => UploadedFile::fake()->create('Dua.pdf', 10, 'application/pdf'),
+            'delete_files' => $doc['files'][0]['filename'],
+        ], $this->headers())->assertOk()->assertJsonCount(1, 'data.files')->assertJsonPath('data.files.0.realname', 'Dua');
+
+        $this->post('/api/archive/'.$doc['id_doc'], ['summary' => 'x', 'delete_files' => ['', ' ']], $this->headers())
+            ->assertOk()->assertJsonCount(1, 'data.files');
+    }
+
+    public function test_search_normalizes_order_and_include_sub(): void
+    {
+        $this->createArchive();
+
+        $this->getJson('/api/archive?order=DESC&include_sub=true&id_category=3', $this->headers())
+            ->assertOk()->assertJsonPath('data.meta.total', 1);
+        $this->getJson('/api/archive?departement_owner=0&tipefile=-1', $this->headers())
+            ->assertUnprocessable()->assertJsonStructure(['errors' => ['departement_owner', 'tipefile']]);
+        $this->getJson('/api/master/categories?parent=0', $this->headers())
+            ->assertUnprocessable()->assertJsonStructure(['errors' => ['parent']]);
+        $this->getJson('/api/master/categories?q=%25', $this->headers())->assertOk()->assertJsonCount(0, 'data');
     }
 }

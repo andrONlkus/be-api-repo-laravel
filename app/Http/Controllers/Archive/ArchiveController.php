@@ -43,7 +43,8 @@ class ArchiveController extends Controller
 
     public function update(UpdateArchiveRequest $request, int $idDoc)
     {
-        $data = Arr::except($request->validated(), ['userfile', 'edited_by', 'validate_access', 'file_mode', 'delete_files']);
+        // Field yang dikirim kosong diabaikan, tidak menimpa kolom dengan NULL
+        $data = array_filter(Arr::except($request->validated(), ['userfile', 'edited_by', 'validate_access', 'file_mode', 'delete_files']), fn ($v) => $v !== null);
 
         $result = $this->service->update(
             $idDoc,

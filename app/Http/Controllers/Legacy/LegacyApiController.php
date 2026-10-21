@@ -26,7 +26,8 @@ class LegacyApiController extends Controller
     // GET /api/document?nim=  atau  /api/document/nim/{nim}
     public function document(Request $request, ?string $nim = null)
     {
-        $nim ??= $request->query('nim');
+        // REST_Controller membuang akhiran format di segmen terakhir: /nim/123.json -> 123
+        $nim = $nim !== null ? preg_replace('/\.json$/', '', $nim) : $request->query('nim');
 
         if ($nim === '') {
             return response()->json(['status' => 'E', 'code' => '400', 'Message' => 'NIM is empty'], 404);
@@ -82,12 +83,14 @@ class LegacyApiController extends Controller
         $nim = (string) $request->input('nim');
         $idCategory = config('arsip.legacy.categories')[$request->input('school')] ?? null;
 
-        if ($nim === '' || $idCategory === null) {
-            return response()->json([
-                'status' => 'E',
-                'code' => '400',
-                'Message' => $nim === '' ? 'NIM is empty' : 'school must be SBE or STEM',
-            ], 400);
+        // school hanya dipakai saat membuat dokumen baru; update NIM lama tidak membacanya (sama dengan CodeIgniter)
+        $error = match (true) {
+            $nim === '' => 'NIM is empty',
+            $idCategory === null && $this->service->findByNim($nim) === null => 'school must be SBE or STEM',
+            default => null,
+        };
+        if ($error !== null) {
+            return response()->json(['status' => 'E', 'code' => '400', 'Message' => $error], 400);
         }
 
         $files = array_values(array_filter((array) $request->file('userfile', []), fn ($f) => $f instanceof UploadedFile));

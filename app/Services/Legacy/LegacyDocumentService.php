@@ -60,11 +60,12 @@ class LegacyDocumentService
     /**
      * Api::document_post. Bila NIM sudah punya dokumen aktif, file lama diganti
      * (file lama baru dihapus setelah file baru & database berhasil disimpan).
+     * $idCategory hanya dipakai untuk dokumen baru, jadi boleh null saat update.
      *
      * @param  UploadedFile[]  $files
      * @return array{id_doc: int|string, kode_arsip: string}
      */
-    public function upload(string $nim, int $idCategory, ?string $docDate, ?string $expiredDate, ?string $expPublic, array $files): array
+    public function upload(string $nim, ?int $idCategory, ?string $docDate, ?string $expiredDate, ?string $expPublic, array $files): array
     {
         $existing = $this->findByNim($nim);
         $stored = $files ? $this->storage->store($files, (string) $docDate) : [];

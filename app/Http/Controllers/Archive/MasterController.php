@@ -17,9 +17,9 @@ class MasterController extends Controller
     {
         $filters = $request->validate([
             'level' => ['nullable', 'in:1,2,3,4'],
-            'parent' => ['nullable', 'integer'],
+            'parent' => ['nullable', 'integer', 'min:1'],
             'q' => ['nullable', 'string', 'max:100'],
-        ], ['in' => 'Pilihan: :values.', 'integer' => 'Harus berupa ID angka.']);
+        ], ['in' => 'Pilihan: :values.', 'integer' => 'Harus berupa ID angka.', 'min' => 'Harus berupa ID angka.']);
 
         $data = $this->service->categories(
             isset($filters['level']) ? (int) $filters['level'] : null,

@@ -13,6 +13,11 @@ class StoreArchiveRequest extends FormRequest
         return true;
     }
 
+    protected function prepareForValidation(): void
+    {
+        $this->normalizeUserfile();
+    }
+
     public function rules(): array
     {
         return $this->metadataRules('required') + $this->fileRules('required') + [
